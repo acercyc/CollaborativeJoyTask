@@ -221,7 +221,7 @@ class Controller:
 
 
 class Rating:
-    def __init__(self, win, controller, markerSpeed=1):
+    def __init__(self, win, controller, markerSpeed=2):
         self.win = win
         self.controller = controller
         self.markerSpeed = markerSpeed
@@ -234,7 +234,7 @@ class Rating:
             high=self.ratingRange[1],
             precision=100,  # Set precision to 0.01 for finer control
             tickMarks=self.ratingTick,
-            markerStart=50,
+            markerStart=0,
             marker="triangle",
             showAccept=False,
             scale=None,
@@ -252,7 +252,7 @@ class Rating:
             high=self.ratingRange[1],
             precision=100,  # Set precision to 0.01 for finer control
             tickMarks=self.ratingTick,
-            markerStart=50,
+            markerStart=0,
             marker="triangle",
             showAccept=False,
             scale=None,
@@ -561,10 +561,14 @@ def calWeightedAverage(angles, weights):
     """
     angles = np.array(angles)
     weights = np.array(weights)
-
-    # normalise the weights
-    weights = np.array(weights) / np.sum(weights)
-
+    
+    # if both weights are zero make the weights equal to 0.5
+    if np.all(weights == 0):
+        weights = np.array([0.5, 0.5])
+    else:
+        # normalise the weights
+        weights = weights / np.sum(weights)
+        
     # compute the weighted average
     return np.dot(weights, angles)
 
@@ -656,20 +660,26 @@ def run_raiting():
         players[i].rating.reset()
     isPlay = [True, True]
     rating = [50, 50]
+    isLocked = [True, True]
     while np.any(isPlay):
         checkQuit()
 
         for i in range(nPlayers):
             if isPlay[i]:
-                if players[i].controller.get_button(0) == 1:
-                    isPlay[i] = False
-                    players[i].rating.set_marker_color("green")
-                    if i == 0:
-                        players[1].rating.set_marker_color2("green")
-                    elif i == 1:
-                        players[0].rating.set_marker_color2("green")
-
+                # detect the button press to finish the rating
+                if not isLocked[i]:
+                    if players[i].controller.get_button(0) == 1:
+                        isPlay[i] = False
+                        players[i].rating.set_marker_color("green")
+                        if i == 0:
+                            players[1].rating.set_marker_color2("green")
+                        elif i == 1:
+                            players[0].rating.set_marker_color2("green")
+                
                 rating[i] = players[i].rating.update()
+                # check if rating starts to unlock 
+                if rating[i] > 1:
+                    isLocked[i] = False
                 if i == 0:
                     players[1].rating.update2(rating[0])
                 elif i == 1:
@@ -812,27 +822,24 @@ if __name__ == "__main__":
     #                             start the experiment                             #
     # ---------------------------------------------------------------------------- #
     # start message
-    # instruction = "Welcome to the experiment\nPlease press A to continue"
-    # run_instruction_waitPress(instruction)
-    # core.wait(2)
+    instruction = "Welcome to the experiment\nPlease press A to continue"
+    run_instruction_waitPress(instruction)
+    core.wait(2)
 
     while iTrial <= nTrial:
         # trial start instruction
-        # instruction = f"Trial {iTrial}"
-        # run_instruction(instruction)
-        # core.wait(1)
+        instruction = f"Trial {iTrial}"
+        run_instruction(instruction)
+        core.wait(1)
 
-        # contribution
-        # weights = run_raiting()
-        # core.wait(1)
-        # run_cleanScreen()
+        # contribution rating
+        weights = run_raiting()
+        core.wait(1)
+        run_cleanScreen()
         
-        weights = np.array([50, 50])
-        target_angle = np.array([0, 0])
-        bullet_angle = np.array([30, -60])
         # shooting
-        # run_instruction("Prepare to shoot")
-        # core.wait(1)
+        run_instruction("Prepare to shoot")
+        core.wait(1)
         
         speed = [0.02, 0.02]
         target_angle, bullet_angle = run_shooting(speed, isShowPath=isShowPath, isCountdown=isCountdown)
@@ -846,7 +853,6 @@ if __name__ == "__main__":
         jointDiff = calWeightedAverage(diffs, weights) # angle in degrees
 
         # feedback
-        # run_feedback(diffs, jointDiff=jointDiff)
         run_feedback_jointShoot(jointDiff=jointDiff, isShowSelfShot=isShowSelfShot)
         core.wait(3)
         run_cleanScreen()
