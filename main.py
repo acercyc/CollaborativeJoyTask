@@ -6,7 +6,12 @@ import pygame
 target_radius = 0.4
 nPlayers = 2
 refresh_rate = 60
-isFullScreen = True
+isFullScreen = False
+isShowPath = True
+isShowSelfShot = True
+isCountdown = True
+countDownColor = ['red', 'Orange', 'LawnGreen']
+countDownTime = [2, 3]
 
 ctrlMapping = {
     "left_stick_lr": 0,
@@ -46,7 +51,7 @@ class Target:
             lineColor="black",
         )
         self.circle = visual.Circle(
-            win, radius=circle_radius, fillColor="white", lineColor="black"
+            win, radius=circle_radius, fillColor="white", lineColor="black", lineWidth=3
         )
         self.angle = 0  # Angle in radians
 
@@ -66,6 +71,7 @@ class Target:
         else:
             self.angle = 0
         self.angle2position(self.angle)
+        self.circle.lineColor = "black"
 
     def draw(self):
         self.circle.draw()
@@ -73,13 +79,19 @@ class Target:
 
 
 class Bullet:
-    def __init__(self, win, radius=0.01, color="red", speed=0.05):
+    def __init__(self, win, radius=0.01, fillColor="blue", lineColor='blue', speed=0.05):
         self.bullet = visual.Circle(
-            win, radius=radius, fillColor=color, lineColor=color
+            win, radius=radius, fillColor=fillColor, lineColor=lineColor, lineWidth=2
         )
         self.speed = speed
         self.pos = np.array([0.0, 0.0])
         self.direction = None
+        
+    def get_angle(self):
+        return np.arctan2(self.pos[1], self.pos[0])
+    
+    def set_direction_from_angle(self, angle):
+        self.direction = np.array([np.cos(angle), np.sin(angle)])
 
     def update_position(self):
         self.pos += self.speed * self.direction
@@ -209,7 +221,7 @@ class Controller:
 
 
 class Rating:
-    def __init__(self, win, controller, markerSpeed=2):
+    def __init__(self, win, controller, markerSpeed=1):
         self.win = win
         self.controller = controller
         self.markerSpeed = markerSpeed
@@ -447,7 +459,8 @@ class Player:
 
         # Internal instances
         self.target = Target(win, circle_radius=target_radius)
-        self.bullet = Bullet(win)
+        self.bullet = Bullet(win, lineColor=None)
+        self.bullet_joint = Bullet(win, fillColor=None, lineColor="red")
         self.controller = Controller(device=controllerID)
         self.instruction = visual.TextStim(
             win, text="Instruction is empty", color="black", height=0.05
@@ -565,55 +578,70 @@ def checkQuit(key="escape"):
         core.quit()
 
 
-def run_shooting():
+def run_shooting(speed, isShowPath=False, isCountdown=False):
     isShoots = [False, False]
     isPlay = [True, True]
+    isCountdown = [isCountdown, isCountdown]
     directions = [None, None]
     distances = [None, None]
     target_angle = [None, None]
     bullet_angle = [None, None]
     for i in range(nPlayers):
         players[i].bullet.reset()
+        players[i].bullet_joint.reset()
         players[i].target.reset(isRandAngle=True)
+        players[i].target.speed = speed[i]
 
+    t0 = core.getTime()
     while np.any(isPlay):
         checkQuit()
-        # get time
-        t = core.getTime()
         for i in range(nPlayers):
 
             if isPlay[i]:
-                if not isShoots[i]:
-                    # Get the shoot detection
-                    isShoots[i], directions[i] = players[i].controller.shootDetection()
+                if isCountdown[i]:
+                    t = core.getTime()
+                    if t - t0 < countDownTime[0]:
+                        players[i].target.circle.lineColor = countDownColor[0]
+                    elif t - t0 < countDownTime[1]:
+                        players[i].target.circle.lineColor = countDownColor[1]
+                    else:
+                        players[i].target.circle.lineColor = countDownColor[2]
+                        isCountdown[i] = False
                 else:
-                    if players[i].bullet.direction is None:
-                        players[i].bullet.direction = directions[i]
 
-                    # update the states of the bullet and target
-                    players[i].bullet.update_position()
+                    if not isShoots[i]:
+                        # Get the shoot detection
+                        isShoots[i], directions[i] = players[i].controller.shootDetection()
+                    else:
+                        if players[i].bullet.direction is None:
+                            players[i].bullet.direction = directions[i]
 
-                    # if the distance is large ane equal to the radius of the circle,
-                    # 1. set the position on the circle
-                    # 2. stop the bullet update
-                    # 3. stop target update
-                    distances[i] = np.linalg.norm(players[i].bullet.pos)
-                    if distances[i] >= target_radius:
-                        players[i].bullet.set_position(
-                            target_radius * players[i].bullet.direction[0],
-                            target_radius * players[i].bullet.direction[1],
-                        )
-                        isPlay[i] = False
-                        target_angle[i] = players[i].target.angle
-                        bullet_angle[i] = np.arctan2(
-                            players[i].bullet.pos[1], players[i].bullet.pos[0]
-                        )
+                        # update the states of the bullet and target
+                        players[i].bullet.update_position()
+
+                        # if the distance is large ane equal to the radius of the circle,
+                        # 1. set the position on the circle
+                        # 2. stop the bullet update
+                        # 3. stop target update
+                        distances[i] = np.linalg.norm(players[i].bullet.pos)
+                        if distances[i] >= target_radius:
+                            players[i].bullet.set_position(
+                                target_radius * players[i].bullet.direction[0],
+                                target_radius * players[i].bullet.direction[1],
+                            )
+                            isPlay[i] = False
+                            target_angle[i] = players[i].target.angle
+                            bullet_angle[i] = np.arctan2(
+                                players[i].bullet.pos[1], players[i].bullet.pos[0]
+                            )
 
                 players[i].target.update_position()
 
                 # Draw
                 players[i].target.draw()
-                players[i].bullet.draw()
+                if isShowPath:
+                    players[i].bullet.draw()
+                players[i].bullet_joint.draw()
                 players[i].win.flip()
 
     # convert the angle to degree
@@ -718,6 +746,33 @@ def run_feedback(diffs, jointDiff=None, button=0):
         players[1].win.flip()
 
 
+def run_feedback_jointShoot(jointDiff=None, isShowSelfShot=False, button=0):
+    isPlay = [True, True]
+    isPress = np.array([False, False])
+    distances = [None, None]
+    for i in range(nPlayers):
+        players[i].bullet_joint.reset()
+        angle = players[i].target.angle
+        angle += np.radians(jointDiff)
+        players[i].bullet_joint.set_direction_from_angle(angle)                
+    
+    while np.any(isPlay):
+        checkQuit()
+        for i in range(nPlayers):
+            players[i].bullet_joint.update_position()
+            distances[i] = np.linalg.norm(players[i].bullet_joint.pos)
+            if distances[i] >= target_radius:
+                players[i].bullet_joint.set_position(
+                    target_radius * players[i].bullet_joint.direction[0],
+                    target_radius * players[i].bullet_joint.direction[1],
+                )
+                isPlay[i] = False       
+            players[i].target.draw()
+            players[i].bullet_joint.draw()
+            players[i].win.flip()
+            
+
+
 # ---------------------------------------------------------------------------- #
 #                               start experiment                               #
 # ---------------------------------------------------------------------------- #
@@ -757,27 +812,30 @@ if __name__ == "__main__":
     #                             start the experiment                             #
     # ---------------------------------------------------------------------------- #
     # start message
-    instruction = "Welcome to the experiment\nPlease press A to continue"
-    run_instruction_waitPress(instruction)
-    core.wait(2)
+    # instruction = "Welcome to the experiment\nPlease press A to continue"
+    # run_instruction_waitPress(instruction)
+    # core.wait(2)
 
     while iTrial <= nTrial:
         # trial start instruction
-        instruction = f"Trial {iTrial}"
-        run_instruction(instruction)
-        core.wait(1)
+        # instruction = f"Trial {iTrial}"
+        # run_instruction(instruction)
+        # core.wait(1)
 
         # contribution
-        weights = run_raiting()
-        core.wait(1)
-        run_cleanScreen()
-
+        # weights = run_raiting()
+        # core.wait(1)
+        # run_cleanScreen()
+        
+        weights = np.array([50, 50])
+        target_angle = np.array([0, 0])
+        bullet_angle = np.array([30, -60])
         # shooting
-        run_instruction("Prepare to shoot")
-        core.wait(1)
-        target_angle, bullet_angle = run_shooting()
-        core.wait(1)
-        run_cleanScreen()
+        # run_instruction("Prepare to shoot")
+        # core.wait(1)
+        
+        speed = [0.02, 0.02]
+        target_angle, bullet_angle = run_shooting(speed, isShowPath=isShowPath, isCountdown=isCountdown)
         core.wait(1)
 
         # compute the difference
@@ -785,11 +843,12 @@ if __name__ == "__main__":
             angleDiff(target_angle[0], bullet_angle[0]),
             angleDiff(target_angle[1], bullet_angle[1]),
         ]
-        jointDiff = calWeightedAverage(diffs, weights)
+        jointDiff = calWeightedAverage(diffs, weights) # angle in degrees
 
         # feedback
-        run_feedback(diffs, jointDiff=jointDiff)
-        core.wait(1)
+        # run_feedback(diffs, jointDiff=jointDiff)
+        run_feedback_jointShoot(jointDiff=jointDiff, isShowSelfShot=isShowSelfShot)
+        core.wait(3)
         run_cleanScreen()
 
         # trial end
