@@ -6,7 +6,7 @@ import pygame
 target_radius = 0.4
 nPlayers = 2
 refresh_rate = 60
-isFullScreen = False
+isFullScreen = True
 
 ctrlMapping = {
     "left_stick_lr": 0,
@@ -786,7 +786,6 @@ if __name__ == "__main__":
             angleDiff(target_angle[1], bullet_angle[1]),
         ]
         jointDiff = calWeightedAverage(diffs, weights)
-        print(f"Trial {iTrial}: {diffs}, {jointDiff}")
 
         # feedback
         run_feedback(diffs, jointDiff=jointDiff)
